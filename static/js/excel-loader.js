@@ -97,6 +97,51 @@ function setupTable() {
 	});
 }
 
+function getColumnIndex(columnName) {
+	return headers.findIndex(
+		(header) =>
+			header && header.toLowerCase().includes(columnName.toLowerCase())
+	);
+}
+
+function createGitHubLink(issueTitle, repository, issueNumber) {
+	if (!repository || !issueNumber || !issueTitle) {
+		return issueTitle || "";
+	}
+
+	// Clean up repository name - remove any GitHub URL parts if present
+	let cleanRepo = repository;
+	if (repository.includes("github.com/")) {
+		cleanRepo = repository.split("github.com/")[1];
+	}
+	if (cleanRepo.endsWith("/")) {
+		cleanRepo = cleanRepo.slice(0, -1);
+	}
+
+	// Clean up issue number - extract just the number
+	let cleanIssueNumber = issueNumber.toString().replace("#", "");
+
+	const url = `https://github.com/${cleanRepo}/issues/${cleanIssueNumber}`;
+
+	const link = document.createElement("a");
+	link.href = url;
+	link.textContent = issueTitle;
+	link.target = "_blank";
+	link.rel = "noopener noreferrer";
+	link.style.color = "#3273dc"; // Bulma primary color
+	link.style.textDecoration = "none";
+
+	// Add hover effect
+	link.addEventListener("mouseenter", function () {
+		this.style.textDecoration = "underline";
+	});
+	link.addEventListener("mouseleave", function () {
+		this.style.textDecoration = "none";
+	});
+
+	return link;
+}
+
 function displayData(data) {
 	const tbody = document.getElementById("tableBody");
 	if (!tbody) return;
@@ -106,12 +151,38 @@ function displayData(data) {
 	// Skip header row (index 0) and display data rows
 	const dataRows = data.slice(1);
 
+	// Find column indices
+	const issueTitleIndex = getColumnIndex("issue title");
+	const repositoryIndex = getColumnIndex("repository");
+	const issueNumberIndex = getColumnIndex("issue number");
+
 	dataRows.forEach((row) => {
 		const tr = document.createElement("tr");
 
 		headers.forEach((_, colIndex) => {
 			const td = document.createElement("td");
-			td.textContent = row[colIndex] || "";
+
+			// Check if this is the Issue Title column and we have the required data
+			if (
+				colIndex === issueTitleIndex &&
+				repositoryIndex !== -1 &&
+				issueNumberIndex !== -1
+			) {
+				const issueTitle = row[colIndex] || "";
+				const repository = row[repositoryIndex] || "";
+				const issueNumber = row[issueNumberIndex] || "";
+
+				const link = createGitHubLink(issueTitle, repository, issueNumber);
+
+				if (link instanceof HTMLElement) {
+					td.appendChild(link);
+				} else {
+					td.textContent = link;
+				}
+			} else {
+				td.textContent = row[colIndex] || "";
+			}
+
 			tr.appendChild(td);
 		});
 
