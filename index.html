@@ -178,10 +178,58 @@ Our findings inform the design of future validation and tooling approaches tailo
        <p>
         Our tool is designed from the findings made in our study. 
         The process of numerical bug detection begins from test input generation followed by differential testing with PyTorch programs, and applying varied manifestation strategies to trigger the bug based on the observed debugging techniques by Triton developers.  
-        Next, we will highlight each component in our tool. 
+        Next, we will highlight each component in our tool. <br>
       </p>
 
-    </section>
+      <p>
+        The process of the tool begins with <b>user-defined inputs</b>, which are typically provided by Triton programmers or users who rely on Triton applications. In our case, we refer to the <a href="https://docs.nvidia.com/cuda/cuda-math-api/index.html" style="text-decoration: underline;">Math Library </a> to ensure the inputs are within the supported range and select appropriate values based on each mathematical operator.
+      <br>
+      </p>
+
+        <p>During our study, we observed that developers often test Triton programs with random inputs to identify bugs. 
+        For example, to detect rounding errors, Triton developers might experiment with values like 0.5, 0.499999, or 0.50000001. 
+        To automate this process and make it more efficient, we developed seven mutation strategies inspired by existing fuzzing techniques, offering a more systematic and affordable approach to generating test inputs. 
+        To minimize <b>false positives</b>, each input is subjected to two constraints: 1) verifying that the inputs fall within the supported range for floating-point numbers, and 2) ensuring that the inputs do not overlap with known bug-triggering inputs as identified in the Math Library documentation. 
+      </p> <br>
+
+      <ul> 
+        <li> bitflip_s: Flips the sign component of a floating-point number with a 50% probability, switching between 0 and 1.</li>
+        <li>bitflip_e: Flips a single bit at a random position within the exponent</li>
+        <li>bitflip_m: Flips a single bit at a random position within the mantissa</li>
+        <li> add_e: Adds a randomly generated integer (between 1 and 32) to the exponent.</li>
+        <li>add_m: Adds an integer 2^p − 1 to the mantissa, where p is randomly generated between 1 and 33.</li>
+        <li> sub_e: Subtracts a randomly generated integer (between 1 and 32) from the exponent.</li>
+        <li> sub_m: Subtracts an integer 2^p−1 from the mantissa,, where p is randomly generated between 1 and 33.</li>
+        <li> random bit: Sets a randomly chosen bit in the exponent or mantissa to a random value</li>
+      </ul>
+
+    </section> <br>
+
+    <p>
+        Next, we implemented the manifestation strategies, which were inspired by our findings from the study. 
+        To determine the appropriate thresholds for assertions in each manifestation strategy, we tested multiple error bounds to find the most effective range. 
+        Bug samples that could not be consistently detected within a specific error bound were excluded, which helped reduce false positives. The selected thresholds strike a balance between accurately detecting bugs and maintaining meaningful comparisons between expected and actual results.
+
+      </p> <br>
+
+      <p>
+        From our findings, we observed that Triton programmers frequently compare the results of Triton programs with their PyTorch counterparts to confirm the presence of a bug. 
+        This observation led us to implement differential testing in the tool to initially verify whether Triton programs exhibit numerical errors. 
+        Once a bug is detected, we use assertions and manifestation strategies to further classify the type of bug involved.
+      </p> <br> 
+        
+        <p>
+          Currently, tool is capable of detecting overflow, underflow, rounding, special value bugs, as well as casting and data type bugs. 
+          For each mathematical function, the generates 50 input samples to evaluate its effectiveness in identifying potential Triton numerical bugs. 
+          Given the inherent randomness of the mutation operators, we conducted three independent runs to ensure the accuracy and consistency of the results.
+
+      </p> <br>
+
+      <h3>Eliminating False-positives: </h3>
+      <p>The identified seven bugs in 14 operators. 
+        To further reduce false positives, we implemented specific constraints during the input generation process: 1) verifying that the inputs are within the supported range for floating-point numbers, and 2) ensuring that these inputs do not overlap with known bug-triggering inputs listed in the Math Library documentation.
+      </p>
+
 
 
 <footer class="footer">
