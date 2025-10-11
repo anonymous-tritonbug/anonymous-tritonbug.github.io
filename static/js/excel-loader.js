@@ -6,7 +6,7 @@ function waitForXLSX() {
 	if (typeof XLSX !== "undefined") {
 		// XLSX is loaded, start our code
 		window.addEventListener("load", function () {
-			loadExcelFile("static/triton_bugs_dataset.xlsx");
+			loadExcelFile("static/tile_programming_bugs_dataset.xlsx");
 		});
 	} else {
 		// Wait a bit more
