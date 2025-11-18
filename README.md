@@ -1,15 +1,23 @@
-# An Investigation of Real-World Bugs in Triton Programs
+# Characterizing Real-World Bugs in Tile Programs for Automated Bug Detection
 
 This is an academic paper project page template.
 
 ## Abstract
 
-As deep learning workloads increasingly depend on custom GPU kernels for performance, Triton has emerged as a Python-based domain-specific language and compiler framework for writing efficient, hardware-aware kernels. Triton’s abstrac-tions, such as tile-based programming and implicit parallelism, enable rapid kernel development, but also introduce new vectors for silent, hard-to-diagnose bugs. Unlike CUDA, Triton removes explicit control over thread scheduling, memory layout, and
-synchronization, relying instead on a backend compiler stack that remains largely opaque to the user.
+Tile-based programming frameworks are increasingly adopted to generate high-performance GPU kernels in
+domains such as deep learning and scientific computing. While these frameworks enhance productivity and
+hardware utilization, their multi-stage compilation pipelines introduce distinct code generation bugs that are
+tightly coupled to input shapes, data types, and backend targets. These bugs often manifest as silent correctness
+or performance issues, making them difficult to detect using existing compiler testing tools. Additionally, the
+unique programming conventions of tile domain specific languages complicate root cause identification, while
+fixing such bugs demands specialized knowledge of tile abstractions and compilation pipelines. Despite the
+growing adoption of tile-based systems, their code generation bugs remain largely unexplored.
 
-In this paper, we present the first empirical study of bugs in Triton programs. We manually analyze 38 real-world bug reports across Triton’s core repository and popular open-source projects. Our analysis reveals four dominant root cause categories—Memory, Synchronization, Numerical, and Correct-ness and highlights how Triton’s abstractions and compilation pipeline contribute to a new class of failure modes. We further contrast Triton bugs with known GPU, CPU, and DL bug models, showing that existing testing and debugging tools fail to capture Triton-specific issues.
-
-Our findings inform the design of future validation and tooling approaches tailored to Triton’s unique programming model. This work lays the groundwork for understanding and improving the reliability of a rapidly growing component in modern ML infrastructure.
+This paper presents the first systematic study of tile-program code generation bugs. We analyze 297 realworld bug reports from GitHub and categorize their root causes, symptoms, input patterns, test oracles that
+trigger these bugs and the strategies used to fix them. Based on these findings, we develop Tile-CBDetect, a
+lightweight detection tool that combines automated input generation with differential testing. Tile-CBDetect
+uncovered nine bugs across 17 operators, across three distinct bug categories. Our study provides foundational
+insights for building debugging, testing, and repair tools tailored to tile-based compiler infrastructures.
 
 ## Website License
 
