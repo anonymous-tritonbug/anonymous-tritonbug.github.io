@@ -172,7 +172,7 @@ insights for building debugging, testing, and repair tools tailored to tile-base
   <section>
          <section id="tool">
   <h1>
-      <b>Tile Codegen Bug Detector </b>
+      <b>Tile Codegen Bug Detector (Tile-CBDetect) </b>
     </h1>
     <section id="Tool">
             
@@ -181,64 +181,198 @@ insights for building debugging, testing, and repair tools tailored to tile-base
   <figcaption>Figure 1. Overview on Detecting Tile Codegen Bugs in Triton programs</figcaption>
       </figure> <br>
 
-      <h2>
-        <b>Overview of Tile Codegen Bug Detector</b>
-      </h2>
+      <section id="tile-cbdetect" class="section">
+  <div class="container is-max-desktop">
+    <h2 class="title is-3 has-text-centered">Preliminary Tool: Tile-CBDetect</h2>
 
-       <p>
-        Our tool is designed from the findings made in our study. 
-        The process of codegen bug detection begins from test input generation followed by differential testing with PyTorch programs, and applying varied manifestation strategies to trigger the bug based on the observed debugging techniques by Triton developers.  
-        Next, we will highlight each component in our tool. 
-      </p><br>
-
+    <!-- Overview -->
+    <section class="content">
+      <h3 class="title is-4">Overview</h3>
       <p>
-        The process of the tool begins with <b>user-defined inputs</b>, which are typically provided by Triton programmers or users who rely on Triton applications. In our case, we refer to the <a href="https://docs.nvidia.com/cuda/cuda-math-api/index.html" style="text-decoration: underline;">Math Library </a> to ensure the inputs are within the supported range and select appropriate values based on each mathematical operator. We leverage NVIDIA Math Library documentation due to its quality of documentation on math operators and their error regions.
-      
-      </p><br>
+        <strong>Tile-CBDetect</strong> is a lightweight, Python-based detection framework for automatically
+        identifying code generation bugs in tile-based GPU programs. The tool integrates automated
+        test input generation with differential testing against PyTorch reference implementations,
+        enabling end-to-end validation of tile kernels under diverse configurations.
+      </p>
+      <p>
+        The design of Tile-CBDetect is guided by the empirical findings on bug manifestation
+        strategies and the importance of input diversity and cross-platform output comparison.
+        It systematically constructs tile kernels and paired PyTorch implementations, then
+        executes both to detect correctness and performance anomalies.
+      </p>
+    </section>
 
-        <p>During our study, we observed that developers often test Triton programs with random inputs to identify bugs. 
-        For example, to detect rounding errors, Triton developers might experiment with values like 0.5, 0.499999, or 0.50000001. 
-        To automate this process and make it more efficient, we developed seven mutation strategies inspired by existing fuzzing techniques, offering a more systematic and affordable approach to generating test inputs. 
-        To minimize <b>false positives</b>, each input is subjected to two constraints: 1) verifying that the inputs fall within the supported range for floating-point numbers, and 2) ensuring that the inputs do not overlap with known bug-triggering inputs as identified in the Math Library documentation. 
-      </p> <br>
+    <!-- Capabilities and Workflow -->
+    <section class="content">
+      <h3 class="title is-4">Capabilities and Testing Workflow</h3>
+      <p>
+        Tile-CBDetect automatically handles:
+      </p>
+      <ul>
+        <li>Dynamic construction of target tile kernels and matching PyTorch reference code.</li>
+        <li>Automated input generation, compilation, and execution of tile programs.</li>
+        <li>Memory allocation, kernel launch, and result collection.</li>
+        <li>Differential comparison between tile and PyTorch outputs within numerical tolerances.</li>
+      </ul>
+      <p>
+        This workflow supports end-to-end testing of tile code generation correctness, and can be
+        extended to test multiple backends or compilers.
+      </p>
+    </section>
 
-      <ul> 
-        <li> bitflip_s: Flips the sign component of a floating-point number with a 50% probability, switching between 0 and 1.</li>
-        <li>bitflip_e: Flips a single bit at a random position within the exponent</li>
-        <li>bitflip_m: Flips a single bit at a random position within the mantissa</li>
-        <li> add_e: Adds a randomly generated integer (between 1 and 32) to the exponent.</li>
-        <li>add_m: Adds an integer 2^p − 1 to the mantissa, where p is randomly generated between 1 and 33.</li>
-        <li> sub_e: Subtracts a randomly generated integer (between 1 and 32) from the exponent.</li>
-        <li> sub_m: Subtracts an integer 2^p−1 from the mantissa,, where p is randomly generated between 1 and 33.</li>
-        <li> random bit: Sets a randomly chosen bit in the exponent or mantissa to a random value</li>
+    <!-- Supported Operators -->
+    <section class="content">
+      <h3 class="title is-4">Supported Operators</h3>
+      <p>
+        The current implementation targets tile programs written in <strong>Triton</strong> and covers a
+        representative set of commonly used operators:
+      </p>
+      <ul>
+        <li>
+          <strong>Unary operators:</strong> <code>exp</code>, <code>log</code>, <code>sqrt</code>, <code>rsqrt</code>, <code>tanh</code>, 
+          <code>sigmoid</code>, <code>abs</code>, <code>neg</code>, <code>relu</code>.
+        </li>
+        <li>
+          <strong>Binary operators:</strong> <code>add</code>, <code>sub</code>, <code>mul</code>, <code>div</code>, <code>max</code>, <code>min</code>.
+        </li>
+        <li>
+          <strong>Reductions:</strong> row-wise <code>reduce_sum</code> over the last dimension of 2D tensors.
+        </li>
+        <li>
+          <strong>Matrix multiplication:</strong> tiled <code>matmul</code> under various matrix and tile configurations.
+        </li>
+      </ul>
+      <p>
+        Operators are tested across <code>float16</code>, <code>bfloat16</code>, and <code>float32</code> data types. Although the
+        current implementation is Triton-specific, the framework is modular and can be extended
+        to other DSLs such as TileLang, TVM, or Warp.
+      </p>
+    </section>
+
+    <!-- Input Generation -->
+    <section class="content">
+      <h3 class="title is-4">Input Generation Strategies</h3>
+      <p>
+        Tile-CBDetect supports both deterministic and fuzzed input suites to exercise diverse code
+        paths and stress tiling boundaries.
+      </p>
+
+      <h4 class="title is-5">Deterministic Differential Suite</h4>
+      <p>
+        The deterministic suite uses structured workloads designed to expose edge cases in tensor
+        shapes, tiling boundaries, and type combinations, for example:
+      </p>
+      <ul>
+        <li>Unary operators on 1D tensors of length <code>1</code>, <code>33</code>, <code>1024</code>, <code>10000</code>, and <code>65537</code>.</li>
+        <li>Binary operators on aligned pairs of length <code>33</code>, <code>1024</code>, and <code>10000</code>.</li>
+        <li>Reductions on 2D tensors with shapes <code>(33, 64)</code>, <code>(1024, 128)</code>, and <code>(65537, 64)</code>.</li>
+        <li>
+          Matrix multiplications on triplets such as <code>(96, 64, 96)</code>, <code>(256, 256, 48)</code>, 
+          <code>(129, 1024, 96)</code> combined with tile configurations like <code>(64, 32, 16)</code> 
+          and <code>(128, 64, 64)</code>.
+        </li>
       </ul>
 
-    </section> <br>
-
-    <p>
-        Next, we implemented the manifestation strategies, which were inspired by our findings from the study. 
-        To determine the appropriate thresholds for assertions in each manifestation strategy, we tested multiple error bounds to find the most effective range. 
-        Bug samples that could not be consistently detected within a specific error bound were excluded, which helped reduce false positives. The selected thresholds strike a balance between accurately detecting bugs and maintaining meaningful comparisons between expected and actual results.
-
-      </p> <br>
-
+      <h4 class="title is-5">Fuzzed and Tile-Aware Inputs</h4>
       <p>
-        From our findings, we observed that Triton programmers frequently compare the results of Triton programs with their PyTorch counterparts to confirm the presence of a bug. 
-        This observation led us to implement differential testing in the tool to initially verify whether Triton programs exhibit numerical errors. 
-        Once a bug is detected, we use assertions and manifestation strategies to further classify the type of bug involved.
-      </p> <br> 
-        
-        <p>
-          Currently, tool is capable of detecting overflow, underflow, rounding, special value bugs, as well as casting and data type bugs. 
-          For each mathematical function, the generates 50 input samples to evaluate its effectiveness in identifying potential Triton numerical bugs. 
-          Given the inherent randomness of the mutation operators, we conducted three independent runs to ensure the accuracy and consistency of the results.
-
-      </p> <br>
-
-      <h3><b>Eliminating False-positives: </b></h3>
-      <p>The identified seven bugs in 14 operators. 
-        To further reduce false positives, we implemented specific constraints during the input generation process: 1) verifying that the inputs are within the supported range for floating-point numbers, and 2) ensuring that these inputs do not overlap with known bug-triggering inputs listed in the Math Library documentation.
+        The fuzzer mode extends deterministic suites by:
       </p>
+      <ul>
+        <li>Randomly selecting operator classes and input shapes (e.g., changing lengths to 257).</li>
+        <li>Sampling tiling and data type configurations from the deterministic pool.</li>
+        <li>Using random data (scaled by 0.5) for numerical stability and casting to target dtypes.</li>
+        <li>Optionally seeding per test for reproducible matmul and mixed-type cases.</li>
+      </ul>
+      <p>
+        While current input generation relies on structured suites and tile-aware randomization,
+        integration of advanced techniques (e.g., constraint solving, symbolic execution, grammar-based
+        fuzzing) is left as future work.
+      </p>
+    </section>
+
+    <!-- Minimizing False Positives -->
+    <section class="content">
+      <h3 class="title is-4">Minimizing False Positives</h3>
+      <p>
+        To maintain high detection precision, Tile-CBDetect incorporates several safeguards:
+      </p>
+      <ul>
+        <li>
+          <strong>Domain sanitization:</strong> test data is adjusted per operator to avoid invalid values
+          (e.g., using <code>x = x.abs() + ε</code> for <code>log</code> and <code>rsqrt</code>) and prevent NaNs or undefined behavior.
+        </li>
+        <li>
+          <strong>Relative error metrics:</strong> correctness is checked via relative differences using
+          PyTorch outputs as reference, with configurable tolerances and optional higher-precision
+          references for sensitive operators.
+        </li>
+        <li>
+          <strong>Stable performance measurements:</strong> multiple warmup and measurement runs
+          (e.g., 3–5) and optional stable-timing modes reduce noise in timing-based oracles.
+        </li>
+        <li>
+          <strong>Workload gating:</strong> performance checks are applied only above a configurable
+          minimum work threshold to avoid flagging trivial workloads.
+        </li>
+      </ul>
+      <p>
+        Minor floating-point deviations and co-located NaNs are not considered bugs, reducing
+        noise in correctness oracles.
+      </p>
+    </section>
+
+    <!-- Experimental Evaluation -->
+    <section class="content">
+      <h3 class="title is-4">Experimental Evaluation</h3>
+      <p>
+        Experiments were conducted on a server with an Intel Xeon w5-2545 CPU and two RTX 4000
+        Ada GPUs (CUDA 12.8). For each operator, Tile-CBDetect generated 500 input samples and
+        executed three independent runs per configuration to reduce randomness from mutations
+        and timing noise.
+      </p>
+      <p>
+        Across 17 Triton operators, Tile-CBDetect identified <strong>nine previously unknown codegen bugs</strong>,
+        covering both correctness violations and performance anomalies. These issues have been
+        reported to the Triton development team, and updates will be released through the project
+        website.
+      </p>
+    </section>
+
+    <!-- Limitations and Outlook -->
+    <section class="content">
+      <h3 class="title is-4">Limitations and Outlook</h3>
+      <p>
+        Tile-CBDetect is designed as a preliminary, lightweight detector to demonstrate the feasibility
+        of systematic codegen testing for tile-based programs. Key limitations include:
+      </p>
+      <ul>
+        <li>
+          <strong>Operator coverage:</strong> support is currently limited to 17 core operators; extending to
+          convolutions, softmax, and domain-specific kernels is future work.
+        </li>
+        <li>
+          <strong>Oracle scope:</strong> while several differential and metamorphic tests are implemented,
+          more expressive assertions and invariants are needed to capture subtle semantic bugs.
+        </li>
+        <li>
+          <strong>Framework generality:</strong> the current implementation targets Triton; additional
+          frontends and backends are required for TileLang, Warp, TVM, and other DSLs.
+        </li>
+        <li>
+          <strong>Assertion fidelity:</strong> correctness checks focus on numerical equivalence within
+          tolerance bounds and do not yet enforce formal specifications or account for hardware
+          nondeterminism.
+        </li>
+      </ul>
+      <p>
+        Despite these constraints, Tile-CBDetect fills a critical gap in testing tile-level code
+        generation. It provides a practical foundation for more comprehensive, architecture-aware
+        testing frameworks for tile programming systems.
+      </p>
+    </section>
+  </div>
+</section>
+
 
 
 
