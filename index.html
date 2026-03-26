@@ -297,6 +297,26 @@ insights for building debugging, testing, and repair tools tailored to tile-base
     font-weight: 500;
   }
   .issue-link:hover { text-decoration: underline; }
+  pre *,
+  code * {
+    all: revert !important;
+  }
+  pre code,
+  pre code * {
+    color: inherit !important;
+    background: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: inherit !important;
+    line-height: inherit !important;
+    display: inline !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    box-shadow: none !important;
+  }
 </style>
 
 <section class="section" id="bug-causes-showcase">
