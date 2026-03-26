@@ -360,34 +360,34 @@ insights for building debugging, testing, and repair tools tailored to tile-base
             <p>Branch predication bugs arise when control flow expressed over logical tiles
               is incorrectly lowered to operate over physical threads. Incorrect lowering
               of predicates can cause valid tile instances to be skipped or incorrectly masked.</p>
-
             <span class="label-tag label-example">Example: Triton <a class="issue-link" href="https://github.com/triton-lang/triton/issues/5265">#5265</a></span>
 <pre><code class="language-python"># Simplified from the actual issue #5265 reproducer
 @triton.jit
-def kernel(Q, K, V, Out, stride_om, stride_on):
-    q  = tl.load(Q_block_ptr)                        # [64, 128]
-    k  = tl.load(K_block_ptr)                        # [128, 64]
-    qk = tl.dot(q, k).to(tl.bfloat16)               # [64, 64], cast to bf16
+def repro_kernel(q_ref, k_ref, v_ref, output_ptr):
+    offsets64  = tl.arange(0, 64)
+    offsets128 = tl.arange(0, 128)
 
-    v  = tl.load(V_block_ptr)                        # [64, 128]
-    o  = tl.dot(qk, v)                               # [64, 128]
+    q  = tl.load(q_ref + (offsets64[:, None] * 128 + offsets128[None, :]))   # [64, 128]
+    k  = tl.load(k_ref + (offsets128[:, None] * 64 + offsets64[None, :]))    # [128, 64]
+    qk = tl.dot(q, k).to(tl.bfloat16)                                       # [64, 64]
 
-    offs_m = tl.arange(0, 64)
-    offs_n = tl.arange(0, 128)
-    tl.store(Out + offs_m[:, None] * stride_om + offs_n[None, :] * stride_on, o)
+    v  = tl.load(v_ref + (offsets64[:, None] * 128 + offsets128[None, :]))   # [64, 128]
+    o  = tl.dot(qk, v)                                                       # [64, 128]
+
+    tl.store(output_ptr + (offsets64[:, None] * 128 + offsets128[None, :]), o.to(tl.bfloat16))
 
 # ✅ num_warps=4 — compiles and executes correctly
 # ❌ num_warps=8 — triggers assertion failure in LinearLayout.cpp::reshapeOuts(...)
-kernel[(1,)](q, k, v, out, stride_om, stride_on, num_warps=8)</code></pre>
+repro_kernel[(1, 1)](q, k, v, output, num_warps=8, num_ctas=1, num_stages=3)</code></pre>
             <span class="label-tag label-rootcause">Root Cause</span>
             <p>The failure is a warp-configuration-sensitive regression in Triton's Linear Layout pass.
               The commit that introduced <code>stmatrix</code> support through linear layouts
-              (<code>49266aa</code>) contains assumptions that hold for <code>num_warps=4</code>
-              but break for <code>num_warps=8</code>.</p>
-            <span class="label-tag label-taxonomy">Taxonomy Note</span>
-            <p>We categorize this as representative of branch predication bugs in our taxonomy,
-              although the public issue directly exposes it as a Linear Layout assertion failure
-              under a warp-sensitive configuration.</p>
+              (<code>49266aa</code>) contains assumptions about tile-to-warp mapping that hold
+              for <code>num_warps=4</code> but break for <code>num_warps=8</code>.
+              Because the Linear Layout pass is responsible for deriving how logical tiles
+              are distributed across physical warps and threads — including the predication
+              and masking decisions that depend on this mapping — the invalid layout
+              causes the compiler to fail before correct control flow can be generated.</p>
           </div>
 
           <!-- 4.1.2 -->
@@ -483,67 +483,75 @@ kernel[(1,)](q, k, v, out, stride_om, stride_on, num_warps=8)</code></pre>
               semantically unstable IRs.</p>
 
             <span class="label-tag label-example">Example: TileLang <a class="issue-link" href="https://github.com/tile-ai/tilelang/issues/313">#313</a></span>
-<pre><code class="language-python"># TileLang FlashAttention backward kernel
-# T.handle ordering before T.block_attr appears to be random
-
-# ─── Compilation Run 1 ───
-T.handle("dv_shared", ...)     # handle 0
-T.handle("K_shared", ...)      # handle 1
-T.handle("dk_shared", ...)     # handle 2
-T.block_attr({"layout_map": {0: "dv_shared", 1: "K_shared", 2: "dk_shared"}})
-
-# ─── Compilation Run 2 (same source code!) ───
-T.handle("K_shared", ...)      # handle 0  ← different!
-T.handle("dk_shared", ...)     # handle 1  ← different!
-T.handle("dv_shared", ...)     # handle 2  ← different!
-T.block_attr({"layout_map": {0: "K_shared", 1: "dk_shared", 2: "dv_shared"}})
-
-# → tilelang.compile fails to load cached kernel
-# → logically identical kernels treated as distinct artifacts</code></pre>
-            <span class="label-tag label-rootcause">Root Cause</span>
-            <p>Non-deterministic creation order of shared-memory tile handles causes
-              <code>layout_map</code> bindings to differ across compilations, defeating
-              kernel caching. The compiler lacks a canonical ordering step for tile handle
-              construction.</p>
-          </div>
-
-          <!-- 4.2.2 -->
-          <div class="bug-subcategory">
-            <h4>4.2.2 IR Transformation Bugs</h4>
-            <span class="label-tag label-description">Description</span>
-            <p>IR transformation bugs arise when mid-end optimization passes rewrite tile
-              IRs in ways that invalidate tile-specific execution invariants, such as
-              boundary conditions and masked regions.</p>
-
-            <span class="label-tag label-example">Example: Halide <a class="issue-link" href="https://github.com/halide/Halide/issues/8667">#8667</a></span>
-<pre><code class="language-cpp">// Actual minimal reproducer from the issue
-#include "Halide.h"
-using namespace Halide;
-
-int main() {
-    Func f("f"), g("g");
-    Var x("x");
-
-    f(x) = select(x == 0, x + 1, undef&lt;int&gt;());
-    g(x) = select(x == 0, f(x), -f(1 - x));
-
-    Buffer&lt;int&gt; result = g.realize({2});
-    // Expected: g(0)=1, g(1)=-1
-    // Actual:   g(0) is never computed ← ❌ BUG
-    //           g(1) = -1             ← correct
-}</code></pre>
-            <span class="label-tag label-rootcause">Root Cause</span>
-            <p>The optimizer exploits <code>undef</code> values to prune a branch of
-              <code>select</code>, inadvertently eliminating the <code>x == 0</code> case
-              where the computation is well-defined.</p>
-            <span class="label-tag label-taxonomy">Taxonomy Note</span>
-            <p>In our taxonomy, this reflects an IR transformation that prunes a valid
-              execution branch based on undefined-value assumptions, reducing the intended
-              iteration-domain coverage—a pattern representative of tile IR transformation
-              bugs.</p>
-          </div>
-        </div>
-      </div>
+            <pre><code class="language-python"># TileLang FlashAttention backward kernel (func.script() dump)
+            # T.handle ordering before T.block_attr appears to be random
+            
+            # ─── Compilation Run 1 ───
+            dv_shared = T.handle("float16", "shared.dyn")
+            K_shared  = T.handle("float16", "shared.dyn")
+            dk_shared = T.handle("float16", "shared.dyn")
+            T.block_attr({"layout_map": {
+                dQ.data:   metadata["tl.Layout"][0],
+                dv_shared: metadata["tl.Layout"][1],
+                K_shared:  metadata["tl.Layout"][2],
+                dk_shared: metadata["tl.Layout"][3]}})
+            
+            # ─── Compilation Run 2 (same source code!) ───
+            K_shared  = T.handle("float16", "shared.dyn")   # ← different order!
+            dv_shared = T.handle("float16", "shared.dyn")   # ← different order!
+            dk_shared = T.handle("float16", "shared.dyn")
+            T.block_attr({"layout_map": {
+                K_shared:  metadata["tl.Layout"][0],         # ← bindings shifted!
+                dQ.data:   metadata["tl.Layout"][1],
+                dv_shared: metadata["tl.Layout"][2],
+                dk_shared: metadata["tl.Layout"][3]}})
+            
+            # → tilelang.compile fails to load cached kernel
+            # → logically identical kernels treated as distinct artifacts</code></pre>
+                        <span class="label-tag label-rootcause">Root Cause</span>
+                        <p>Non-deterministic creation order of shared-memory tile handles causes
+                          <code>layout_map</code> bindings to differ across compilations, defeating
+                          kernel caching. The compiler lacks a canonical ordering step for tile handle
+                          construction.</p>
+                      </div>
+            
+                      <!-- 4.2.2 -->
+                      <div class="bug-subcategory">
+                        <h4>4.2.2 IR Transformation Bugs</h4>
+                        <span class="label-tag label-description">Description</span>
+                        <p>IR transformation bugs arise when mid-end optimization passes rewrite tile
+                          IRs in ways that invalidate tile-specific execution invariants, such as
+                          boundary conditions and masked regions.</p>
+            
+                        <span class="label-tag label-example">Example: Halide <a class="issue-link" href="https://github.com/halide/Halide/issues/8667">#8667</a></span>
+            <pre><code class="language-cpp">// Minimal reproducer from the issue
+            #include &lt;Halide.h&gt;
+            using namespace Halide;
+            
+            int main() {
+                Var x{"x"};
+                Func f{"f"}, g{"g"};
+            
+                f(x) = select(x == 0, x + 1, undef&lt;int&gt;());
+                g(x) = select(x == 0, f(x), -f(1 - x));
+            
+                g.trace_stores();
+            
+                Buffer&lt;int&gt; output = g.realize({4});
+                // Expected: g(0)=1, g(1)=-1, ...
+                // Actual output:
+                //   Store g.0(1) = -1
+                //   g(0) is never computed  ← ❌ BUG
+            }</code></pre>
+                        <span class="label-tag label-rootcause">Root Cause</span>
+                        <p>The optimizer exploits <code>undef</code> values to prune a branch of
+                          <code>select</code>, inadvertently eliminating the <code>x == 0</code> case
+                          where the computation is well-defined. This causes the compiler to silently
+                          reduce the effective iteration domain, skipping points that the original
+                          tiled logic correctly covers.</p>
+                      </div>
+                    </div>
+                  </div>
 
       <!-- ============================================================ -->
       <!-- 4.3 Tile Mapping and Launch Bugs -->
@@ -567,58 +575,79 @@ int main() {
           <div class="bug-subcategory">
             <h4>4.3.1 Launch Configuration Bugs</h4>
             <span class="label-tag label-description">Description</span>
-            <p>Launch configuration bugs arise when the compiler miscomputes launch parameters
-              derived from tile-level abstractions.</p>
+            <p>Launch configuration bugs arise when the compiler miscomputes launch
+              parameters derived from tile-level abstractions.</p>
 
             <span class="label-tag label-example">Example: PyTorch <a class="issue-link" href="https://github.com/pytorch/pytorch/issues/141121">#141121</a></span>
-<pre><code class="language-python"># Setting max_tiles=3 triggers kernel generation failure
-import torch._inductor.config as config
-config.triton.max_tiles = 3
-config.triton.prefer_nd_tiling = True
+            <pre><code class="language-python"># Reproducer from the issue
+            import torch, functools
+            from torch._inductor.utils import run_and_get_triton_code
+            from torch._inductor import config
+            
+            config.triton.max_tiles = 3
+            config.triton.prefer_nd_tiling = True
+            
+            full_size, view_size = (5, 5, 5, 5, 5), (3, 3, 5, 3, 5)
+            
+            def get_input():
+                full = torch.randn(full_size).to("cuda")
+                return torch.as_strided(full, view_size, full.stride())
+            
+            a, b = get_input(), get_input()
+            opt_fn = torch.compile(functools.partial(torch.add))
+            code = run_and_get_triton_code(opt_fn, a, b)
+            
+            # ❌ BackendCompilerFailed / AssertionError
+            # The LoopBody iteration prefix "z" conflicts with the
+            # z-dimension range tree prefix (banned in the symbol system).
+            # No corresponding ZBLOCK is defined.
+            # → Internal symbol-prefix collision during code generation</code></pre>
+                        <span class="label-tag label-rootcause">Root Cause</span>
+                        <p>The codegen infrastructure assumes iteration prefixes for tile groups won't
+                          collide with reserved dimension prefixes. Increasing the tile group count to 3
+                          introduces the <code>z</code> prefix which overlaps with the reserved
+                          z-dimension namespace.</p>
+                      </div>
+            
+                      <!-- 4.3.2 -->
+                      <div class="bug-subcategory">
+                        <h4>4.3.2 Thread-Block Mapping Bugs</h4>
+                        <span class="label-tag label-description">Description</span>
+                        <p>Thread–block mapping bugs arise when the compiler emits incorrect logic
+                          for mapping logical tiles to physical grid and block indices.</p>
+            
+                        <span class="label-tag label-example">Example: PyTorch <a class="issue-link" href="https://github.com/pytorch/pytorch/issues/157018">#157018</a></span>
+            <pre><code class="language-python"># Reproducer from the issue
+            import torch
+            from torch.nn.attention.flex_attention import flex_attention
+            
+            flex_attention = torch.compile(flex_attention, dynamic=True)
+            
+            DEVICE = 'cuda:0'
+            dtype = torch.float32
+            
+            B, H, L, C = (22720, 3, 64, 32)   # ❌ Error
+            # B, H, L, C = (20480, 3, 64, 32) # ✅ No Error
+            # B, H, L, C = (20480, 4, 64, 32) # ❌ Error
+            
+            q = torch.rand(B, H, L, C, dtype=dtype, device=DEVICE)
+            k = torch.rand(B, H, L, C, dtype=dtype, device=DEVICE)
+            v = torch.rand(B, H, L, C, dtype=dtype, device=DEVICE)
+            
+            attn = flex_attention(q, k, v)
+            # RuntimeError: Triton Error [CUDA]: invalid argument
+            # at: self.launch(gridX, gridY, gridZ, ...)</code></pre>
+                        <span class="label-tag label-rootcause">Root Cause</span>
+                        <p>When batch and head dimensions are large enough, the compiler maps them
+                          onto grid axes whose product exceeds CUDA hardware launch limits. The
+                          tile-to-grid mapping logic does not check for overflow when flattening
+                          multi-dimensional tile iteration spaces into physical grid dimensions,
+                          causing the kernel launch to fail with an invalid argument error.</p>
+                      </div>
+                    </div>
+                  </div>
 
-# ❌ BackendCompilerFailed / AssertionError
-# The LoopBody iteration prefix "z" conflicts with the
-# z-dimension range tree prefix (banned in the symbol system).
-# No corresponding ZBLOCK is defined.
-# → Internal symbol-prefix collision during code generation</code></pre>
-            <span class="label-tag label-rootcause">Root Cause</span>
-            <p>The codegen infrastructure assumes iteration prefixes for tile groups won't
-              collide with reserved dimension prefixes. Increasing the tile group count to 3
-              introduces the <code>z</code> prefix which overlaps with the reserved
-              z-dimension namespace.</p>
-          </div>
-
-          <!-- 4.3.2 -->
-          <div class="bug-subcategory">
-            <h4>4.3.2 Thread-Block Mapping Bugs</h4>
-            <span class="label-tag label-description">Description</span>
-            <p>Thread–block mapping bugs arise when the compiler emits incorrect logic for
-              mapping logical tiles to physical grid and block indices.</p>
-
-            <span class="label-tag label-example">Example: PyTorch <a class="issue-link" href="https://github.com/pytorch/pytorch/issues/157018">#157018</a></span>
-<pre><code class="language-python"># Simplified example (not the exact reproducer)
-from torch.nn.attention.flex_attention import flex_attention
-flex_attention = torch.compile(flex_attention, dynamic=True)
-
-# ✅ Moderate batch/head counts — works
-# ❌ Large batch/head — Triton Error [CUDA]: invalid argument
-# Thresholds from the issue:
-#   (B=22720, H=3, L=64, C=32) → fails
-#   (B=20480, H=3, L=64, C=32) → works
-#   (B=20480, H=4, L=64, C=32) → fails
-# Error at: self.launch(gridX, gridY, gridZ, ...)</code></pre>
-            <span class="label-tag label-rootcause">Root Cause</span>
-            <p>The Triton launch fails when batch/head dimensions are large enough.
-              The error occurs at <code>self.launch(gridX, gridY, gridZ, ...)</code>,
-              consistent with grid dimensions exceeding hardware limits.</p>
-            <span class="label-tag label-taxonomy">Taxonomy Note</span>
-            <p>In our taxonomy, we interpret this as a thread–block mapping bug where the
-              tile-to-grid mapping logic lacks overflow detection for large iteration spaces.</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============================================================ -->
+     <!-- ============================================================ -->
       <!-- 4.4 Memory Bugs -->
       <!-- ============================================================ -->
       <div class="bug-category" id="cat-memory">
@@ -645,30 +674,28 @@ flex_attention = torch.compile(flex_attention, dynamic=True)
 
             <span class="label-tag label-example">Example: Triton <a class="issue-link" href="https://github.com/triton-lang/triton/issues/443">#443</a></span>
 <pre><code class="language-python"># Issue: "Segfault in dds_matmul"
-# Under cuda-memcheck:
-#   "Invalid global read of size 4"
-#   "Address ... is out of bounds"
-# Error inside _dsd_kernel, reproducible under cuda-memcheck
+# Reproducer triggers _dsd_kernel via blocksparse matmul backward pass:
 
-@triton.jit
-def _dsd_kernel(A, B, C, ...,
-                BLOCK_M: tl.constexpr, BLOCK_K: tl.constexpr, BLOCK_N: tl.constexpr):
-    pid_m = tl.program_id(0)
-    pid_n = tl.program_id(1)
-    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
-    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    offs_k = tl.arange(0, BLOCK_K)
+from triton.ops.blocksparse.matmul import _matmul
 
-    # ❌ Some threads read from addresses beyond valid memory
-    a_ptrs = A + offs_m[:, None] * K + offs_k[None, :]
-    b_ptrs = B + offs_k[:, None] * N + offs_n[None, :]
-    acc = tl.dot(tl.load(a_ptrs), tl.load(b_ptrs))
-    tl.store(C + offs_m[:, None] * N + offs_n[None, :], acc)</code></pre>
+# ctx contains pre-built LUT tensors for the sparse layout
+# dc is the upstream gradient tensor
+_matmul.backward(ctx=ctx, dc=dc)
+
+# Under cuda-memcheck (PYTORCH_NO_CUDA_MEMORY_CACHING=1):
+#   "Invalid __global__ read of size 4"
+#   "    at 0x00000670 in _dsd_kernel"
+#   "    by thread (97,0,0) in block (0,17,0)"
+#   "    Address 0x7f1306db0400 is out of bounds"
+#
+# The segfault is rare but reliably reproduced under cuda-memcheck.
+# Adding logging or capturing intermediate state perturbs timing
+# enough to make the bug disappear (heisenbug behavior).</code></pre>
             <span class="label-tag label-rootcause">Root Cause</span>
-            <p>The issue demonstrates out-of-bounds global memory reads at runtime. In our
-              analysis, this reflects incorrect address synthesis from tile-local indices
-              for sparse access patterns. The issue itself does not provide a detailed
-              internal diagnosis.</p>
+            <p>The <code>_dsd_kernel</code> (dense-sparse-dense matmul) performs out-of-bounds
+              global memory reads at runtime due to incorrect address computation within
+              tile-local index arithmetic for sparse access patterns. The issue author notes
+              heisenbug behavior — perturbations to timing or memory layout suppress the fault.</p>
           </div>
 
           <!-- 4.4.2 -->
@@ -679,21 +706,32 @@ def _dsd_kernel(A, B, C, ...,
               lifetime or reuse of registers or shared-memory buffers across tile phases.</p>
 
             <span class="label-tag label-example">Example: TileLang <a class="issue-link" href="https://github.com/tile-ai/tilelang/issues/359">#359</a></span>
-<pre><code class="language-python"># Issue: "Encounter Dead Lock ... with 8 warps on hopper"
-for i in T.Parallel(block_M):
-    Scale_C_shared[i] = scales_a[by * block_M + i, k] * scales_b[bx, k]
+<pre><code class="language-python"># Simplified from the full deepgemm reproducer in the issue
+# Config: thread_num=256, warp specialization enabled, Hopper GPU
 
-# Config: thread_num=256, warp specialization enabled
+for k in T.Pipelined(T.ceildiv(K, block_K), num_stages=num_stages):
+    T.copy(A[by * block_M, k * block_K], A_shared)
+    T.copy(B[bx * block_N, k * block_K], B_shared)
+
+    # Load scale into shared memory via SIMT copy
+    for i in T.Parallel(block_M):
+        Scale_C_shared[i] = scales_a[by * block_M + i, k] * scales_b[bx, k]
+
+    T.gemm(A_shared, B_shared, C_local, transpose_B=True, policy=policy)
+
+    for i, j in T.Parallel(block_M, block_N):
+        C_local_accum[i, j] += C_local[i, j] * Scale_C_shared[i]
+
 # ❌ Deadlocks on NVIDIA Hopper GPU with 8 warps
-# Observed symptom: hang/deadlock, not incorrect results</code></pre>
-            <p><strong>What the issue reports:</strong> A deepgemm kernel deadlocks on Hopper
-              with 8 warps and warp specialization enabled. The issue does not provide a
-              detailed internal diagnosis.</p>
-            <span class="label-tag label-taxonomy">Our Paper's Analysis</span>
-            <p>We analyze this as a resource-allocation bug involving premature register
-              deallocation (<code>warpgroup_reg_dealloc</code>) during tile-parallel copy.
-              The compiler frees staging registers in the <code>global → register → shared</code>
-              path before the copy completes.</p>
+# pass_configs: tl.disable_warp_specialized = False</code></pre>
+            <span class="label-tag label-rootcause">Root Cause</span>
+            <p>The issue reports a deadlock when running a deepgemm kernel with 8 warps and
+              warp specialization on Hopper. Our analysis attributes this to premature register
+              deallocation (<code>warpgroup_reg_dealloc</code>) during tile-parallel copy:
+              the compiler frees staging registers in the
+              <code>global → register → shared</code> path before the SIMT copy completes,
+              corrupting shared memory values and causing the subsequent warp-synchronized
+              operations to hang.</p>
           </div>
 
           <!-- 4.4.3 -->
@@ -707,7 +745,7 @@ for i in T.Parallel(block_M):
             <span class="label-tag label-example">Example: NVIDIA Warp <a class="issue-link" href="https://github.com/NVIDIA/warp/issues/639">#639</a></span>
 <pre><code class="language-python"># Issue: "Kernels that use the Cholesky solver might fail
 #         when block_dim changes"
-
+#
 # cuMathDx needs block_dim at compile time for Cholesky solver.
 # Compiled result is stored as an LTO file.
 
@@ -719,16 +757,20 @@ wp.launch(cholesky_kernel, dim=N, block_dim=128)
 wp.launch(cholesky_kernel, dim=N, block_dim=256)
 # → Kernel hash does NOT include block_dim
 # → Cache returns LTO compiled for block_dim=128
-# → ❌ Incorrect behavior: wrong block_dim assumptions</code></pre>
+# → ❌ Incorrect behavior: wrong block_dim assumptions
+#
+# Note: the issue does not include reproducer code;
+# the above is a schematic illustration of the reported behavior.</code></pre>
             <span class="label-tag label-rootcause">Root Cause</span>
             <p>The kernel caching mechanism does not include <code>block_dim</code> in its
-              hash key. The fix requires adding <code>block_dim</code> to the specialization
-              key so different block configurations produce distinct cache entries.</p>
+              hash key. When <code>block_dim</code> changes between launches, the cache
+              returns an LTO file compiled with incorrect block dimension assumptions,
+              leading to wrong results or failures.</p>
           </div>
         </div>
       </div>
 
-      <!-- ============================================================ -->
+     <!-- ============================================================ -->
       <!-- 4.5 Type and Operator Bugs -->
       <!-- ============================================================ -->
       <div class="bug-category" id="cat-type">
@@ -754,7 +796,7 @@ wp.launch(cholesky_kernel, dim=N, block_dim=256)
               edge cases (NaN, denormals, signed zeros) during tile-level execution.</p>
 
             <span class="label-tag label-example">Example: NVIDIA Warp <a class="issue-link" href="https://github.com/NVIDIA/warp/issues/688">#688</a></span>
-<pre><code class="language-python"># Actual reproducer from the issue
+<pre><code class="language-python"># Reproducer from the issue
 import numpy as np
 import warp as wp
 
@@ -771,11 +813,17 @@ dim = 5;  tilesize = 4  # tile 4×4, but source array is 5×5
 Mwp = wp.array(np.eye(dim) * 2.0, dtype=wp.float32)
 Lwp = wp.zeros((dim, dim), dtype=wp.float32)
 tile_cholesky(Mwp, Lwp, tilesize)
+
+err = np.linalg.cholesky(np.eye(dim) * 2.0)[:tilesize, :tilesize] \
+    - Lwp.numpy()[:tilesize, :tilesize]
 # ❌ Unexpected results including NaNs</code></pre>
             <span class="label-tag label-rootcause">Root Cause</span>
             <p><code>wp.tile_load</code> does not correctly handle 2D source arrays with
-              strides incompatible with the tile shape. The CHANGELOG fix: <em>"Fix 2D tile
-              load when source array and tile have incompatible strides."</em></p>
+              strides incompatible with the tile shape. When the source array is 5×5 but the
+              tile is 4×4, the mismatch in memory layout causes some tile lanes to read
+              uninitialized or out-of-bounds values, producing NaNs. The CHANGELOG fix:
+              <em>"Fix 2D tile load when source array and tile have incompatible
+              strides."</em></p>
           </div>
 
           <!-- 4.5.2 -->
@@ -812,28 +860,39 @@ tile_cholesky(Mwp, Lwp, tilesize)
               logic for operators under tiling, masking, or fusion.</p>
 
             <span class="label-tag label-example">Example: Triton <a class="issue-link" href="https://github.com/triton-lang/triton/issues/1846">#1846</a></span>
-<pre><code class="language-python"># Code from the issue (also Figure 3 in our paper)
+<pre><code class="language-python"># Reproducer from the issue (also Figure 3 in our paper)
 @triton.jit
 def matmul_argmax_kernel(A, B, Out,
     BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr):
     offs_m = tl.arange(0, BLOCK_M)
     offs_n = tl.arange(0, BLOCK_N)
-    offs_k = tl.arange(0, BLOCK_K)
+    offs_d = tl.arange(0, BLOCK_K)
 
-    a = tl.load(A + offs_m[:, None] * BLOCK_K + offs_k[None, :])
-    b = tl.load(B + offs_n[:, None] * BLOCK_K + offs_k[None, :])
+    a_ptrs = A + offs_m[:, None] * BLOCK_K + offs_d[None, :]
+    b_ptrs = B + offs_n[:, None] * BLOCK_K + offs_d[None, :]
 
-    dist = tl.dot(a, tl.trans(b))     # ✅ works
-    idx = tl.argmax(dist, axis=1)      # ❌ SIGSEGV
-    tl.store(Out + offs_m, idx)
+    a = tl.load(a_ptrs)
+    b = tl.load(b_ptrs)
 
-# "Segmentation fault with matmul + argmax"
-# gdb trace confirms SIGSEGV</code></pre>
+    dist = tl.dot(a, tl.trans(b))
+    assignments = tl.argmax(dist, 1)
+    tl.store(Out + offs_m, assignments)
+
+M, N, K = 32, 32, 32
+a = torch.rand(M, K, dtype=torch.float16, device="cuda")
+b = torch.rand(N, K, dtype=torch.float16, device="cuda")
+out = torch.zeros(M, dtype=torch.int32, device="cuda")
+matmul_argmax_kernel[(1,)](a, b, out, BLOCK_M=M, BLOCK_N=N, BLOCK_K=K)
+# ❌ SIGSEGV during compilation
+# gdb: crash in mlir::OperationFolder::tryToFold()
+#   within TritonGPURemoveLayoutConversionsPass</code></pre>
             <span class="label-tag label-rootcause">Root Cause</span>
             <p>A semantically valid <code>tl.dot</code> + <code>tl.argmax</code> composition
-              triggers a segfault. The exact internal reduction mechanism is not diagnosed in
-              the issue. In our paper's analysis, the compiler's synthesized reduction algorithm
-              contains incorrect assumptions when applied after <code>tl.dot</code>.</p>
+              triggers a segfault during compilation. The gdb trace shows the crash occurs
+              in <code>TritonGPURemoveLayoutConversionsPass</code> when the pattern rewriter
+              attempts to fold operations produced by the argmax reduction lowering. In our
+              paper's analysis, the compiler's synthesized reduction algorithm contains
+              incorrect assumptions about the output layout after <code>tl.dot</code>.</p>
           </div>
         </div>
       </div>
@@ -855,33 +914,41 @@ def matmul_argmax_kernel(A, B, Out,
             and target GPU hardware constraints. The tile program is semantically valid, but the
             lowered code violates device-specific requirements.
           </div>
-
           <div class="bug-subcategory">
             <span class="label-tag label-example">Example: TileLang <a class="issue-link" href="https://github.com/tile-ai/tilelang/issues/101">#101</a></span>
-<pre><code class="language-python"># Issue: "compilation error for mma on NVIDIA Hopper GPU"
-# Reproducer configuration:
-block_M = 64
-block_N = 192
-block_K = 32
-threads = 128 * 2     # 2 warpgroups
-policy = T.GemmWarpPolicy.FullCol
+<pre><code class="language-python"># Simplified from the full reproducer in the issue
+@T.prim_func
+def main(A: T.Buffer((M, K), "float16"),
+         B: T.Buffer((K, N), "float16"),
+         C: T.Buffer((M, N), "float16")):
+    with T.Kernel(T.ceildiv(N, 192), T.ceildiv(M, 64), threads=128*2) as (bx, by):
+        A_shared = T.alloc_shared((64, 32), "float16")     # block_M=64, block_K=32
+        B_shared = T.alloc_shared((32, 192), "float16")    # block_K=32, block_N=192
+        C_local  = T.alloc_fragment((64, 192), "float")
 
-# Per-warpgroup MMA size: M64, N96, K32
-# Reporter states this should be a supported configuration.
+        T.clear(C_local)
+        for k in T.Pipelined(T.ceildiv(K, 32), num_stages=3):
+            T.copy(A[by * 64, k * 32], A_shared)
+            T.copy(B[k * 32, bx * 192], B_shared)
+            T.gemm(A_shared, B_shared, C_local, policy=T.GemmWarpPolicy.FullCol)
+        T.copy(C_local, C[by * 64, bx * 192])
+
+# 2 warpgroups → per-warpgroup MMA: M64, N96, K32
+# Reporter states this should be supported (multiple of wgmma.m64n16k16)
 #
-# ❌ Compilation fails with CUTLASS/CUTE error:
+# ❌ Compilation fails on NVIDIA H100 with CUTLASS/CUTE error:
 #    "Static shape_div failure"
-# Error from SM90 MMA atom layout decomposition</code></pre>
+#    at cute::shape_div(_96, _64) — 96 and 64 are not divisible</code></pre>
             <span class="label-tag label-rootcause">Root Cause</span>
-            <p>The per-warpgroup MMA shape (<code>M64, N96, K32</code>) cannot be decomposed
-              into valid hardware MMA atoms by the SM90 CUTE backend, producing a
-              <code>Static shape_div failure</code>. The compiler does not validate
-              tile-to-MMA compatibility before committing to the lowering path, causing the
-              failure to surface as a backend error rather than an informative diagnostic.</p>
+            <p>The per-warpgroup MMA shape (<code>M64, N96, K32</code>) cannot be evenly
+              decomposed into the SM90 MMA atom layout by the CUTE backend — specifically,
+              <code>shape_div(96, 64)</code> fails because 96 is not divisible by 64. The
+              compiler does not validate tile-to-MMA compatibility before committing to the
+              lowering path, causing the failure to surface as a backend static assertion
+              rather than an informative diagnostic.</p>
           </div>
         </div>
       </div>
-
     </div><!-- .bug-showcase -->
   </div>
 </section>  
