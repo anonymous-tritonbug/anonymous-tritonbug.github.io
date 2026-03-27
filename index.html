@@ -1097,7 +1097,7 @@ def main(A: T.Buffer((M, K), "float16"),
 
         <!-- RC4 -->
         <tr>
-          <td class="fs-td-label">Memory semantics <span class="fs-rc-id">RC4</span></td>
+          <td class="fs-td-label">Memory <span class="fs-rc-id">RC4</span></td>
           <td class="fs-td-other">Failures mainly come from incorrect addressing, alias analysis, buffer transformation, or memory optimization over source-level memory behavior.</td>
           <td class="fs-td-other">Failures mainly come from buffer planning, layout conversion, operator lowering, or backend interaction. Memory decisions are primarily expressed at the tensor/operator and schedule level.</td>
           <td class="fs-td-other">Failures mainly come from programmer-written indexing, shared-memory use, races, or missing synchronization.</td>
@@ -1121,7 +1121,7 @@ def main(A: T.Buffer((M, K), "float16"),
 
         <!-- RC6 -->
         <tr>
-          <td class="fs-td-label">Device / backend adaptation <span class="fs-rc-id">RC6</span></td>
+          <td class="fs-td-label">Device specific <span class="fs-rc-id">RC6</span></td>
           <td class="fs-td-other">Failures arise from backend target assumptions or unsupported codegen paths.</td>
           <td class="fs-td-other">Failures arise from hardware or library incompatibilities below the operator abstraction boundary.</td>
           <td class="fs-td-other">Failures arise when manually written kernels assume unsupported hardware behavior or resource layouts.</td>
