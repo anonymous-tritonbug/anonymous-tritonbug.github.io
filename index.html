@@ -40,6 +40,7 @@
 <a href="#abstract" style="color:#333; text-decoration:none;">Abstract</a>
 <a href="#bug-dataset" style="color:#333; text-decoration:none;">Dataset</a>
 <a href="#bug-causes-showcase" style="color:#333; text-decoration:none;">Bug Causes</a>
+<a href="#failure-spaces" style="color:#333; text-decoration:none;">Failure Spaces</a>
 <a href="#tool" style="color:#333; text-decoration:none;">Tool</a>
 </nav>
 
@@ -957,6 +958,201 @@ def main(A: T.Buffer((M, K), "float16"),
   </div>
 </section>  
   
+
+<!-- ============================================================
+     PIECE 1: NAV LINK
+     ============================================================
+     Find your nav bar and add this line between "Bug Causes" and "Tool":
+
+<a href="#failure-spaces" style="color:#333; text-decoration:none;">Failure Spaces</a>
+
+     ============================================================ -->
+
+
+<!-- ============================================================
+     PIECE 2: FULL SECTION
+     ============================================================
+     Paste everything below AFTER the closing </section> of
+     Bug Causes Showcase (line ~958) and BEFORE the <section id="tool">
+     ============================================================ -->
+
+<style>
+.fs-section { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+.fs-section * { box-sizing: border-box; }
+.fs-table-wrap { overflow-x: auto; border: 1px solid #ddd; border-radius: 10px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+.fs-table { width: 100%; min-width: 920px; border-collapse: separate; border-spacing: 0; font-size: 12.5px; line-height: 1.6; }
+.fs-table thead th { padding: 14px 10px 10px; text-align: center; vertical-align: bottom; border-bottom: 2px solid #c8c6be; background: #fafaf8; font-weight: 600; font-size: 12.5px; }
+.fs-table thead th:first-child { border-top-left-radius: 10px; text-align: left; width: 12%; }
+.fs-table thead th:last-child { border-top-right-radius: 10px; }
+.fs-table thead th.fs-col-other { width: 19%; }
+.fs-table thead th.fs-col-tile { width: 31%; background: #efedfb; }
+.fs-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.3px; text-transform: uppercase; }
+.fs-tag-se { background: #eae9e4; color: #5f5e5a; }
+.fs-tag-sf { background: #dceefb; color: #0c447c; }
+.fs-tag-pw { background: #fce4da; color: #712b13; }
+.fs-tag-cs { background: #e2e0fc; color: #3c3489; }
+.fs-col-name { display: block; font-weight: 700; font-size: 13px; margin-top: 4px; line-height: 1.3; }
+.fs-col-eg { display: block; font-size: 11px; color: #999; margin-top: 2px; font-weight: 400; }
+.fs-col-name-tile { color: #3c3489; }
+.fs-col-eg-tile { color: #7f77dd; }
+.fs-table tbody td { padding: 12px 10px; vertical-align: top; border-bottom: 1px solid #e8e6e0; }
+.fs-table tbody tr:last-child td { border-bottom: none; }
+.fs-table tbody tr:last-child td:first-child { border-bottom-left-radius: 10px; }
+.fs-table tbody tr:last-child td:last-child { border-bottom-right-radius: 10px; }
+.fs-table tbody tr:nth-child(even) td { background: #fcfcfb; }
+.fs-table tbody tr:nth-child(even) td.fs-td-tile { background: #f3f1fb; }
+.fs-td-label { font-weight: 700; font-size: 12.5px; line-height: 1.4; color: #363636; }
+.fs-rc-id { display: block; font-weight: 500; font-size: 11px; color: #999; margin-top: 2px; }
+.fs-td-other { color: #4a4a4a; }
+.fs-td-tile { background: #f7f5fe; color: #2a2355; border-left: 3px solid #7f77dd; }
+.fs-key { font-weight: 700; color: #3c3489; }
+.fs-pct { display: inline-block; margin-top: 8px; padding: 2px 9px; border-radius: 4px; background: #e2e0fc; color: #3c3489; font-size: 11px; font-weight: 700; }
+.fs-trigger { display: block; margin-top: 8px; padding-top: 7px; border-top: 1px dashed rgba(83,74,183,0.25); font-size: 11px; color: #6c63b5; line-height: 1.5; }
+.fs-trigger b { font-weight: 700; color: #534ab7; }
+.fs-note { font-size: 12.5px; color: #4a4a4a; margin: 18px auto 0; line-height: 1.75; text-align: center; max-width: 960px; }
+.fs-note b { color: #363636; }
+.fs-callout { margin: 14px auto 0; padding: 14px 20px; border-radius: 10px; background: linear-gradient(135deg, #f3f1fe 0%, #ece9fd 100%); border: 1px solid rgba(83,74,183,0.2); font-size: 12.5px; line-height: 1.75; color: #2a2355; text-align: center; max-width: 960px; }
+.fs-callout b { color: #3c3489; }
+.fs-footnote { margin: 10px auto 0; padding: 10px 16px; border-radius: 8px; background: #f7f6f3; border: 1px solid #e0ddd5; font-size: 11.5px; line-height: 1.6; color: #777; text-align: center; max-width: 960px; }
+</style>
+
+<section class="section" id="failure-spaces">
+  <div class="container is-max-desktop">
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-3">Root-Cause Failure Spaces</h2>
+        <div class="content has-text-justified">
+          <p>
+            Tile-based DSL compilers begin from abstractions that leave boundary handling, synchronization, layout, and parallel mapping unresolved, and must <em>synthesize</em> these semantics during lowering &mdash; often conditioned on <strong>runtime tensor shapes</strong>. This creates a structurally distinct failure space: the same observable symptoms (crash, wrong result, numeric pathology) can arise from root causes that have no counterpart in the other three domains.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="fs-section">
+      <div class="fs-table-wrap">
+      <table class="fs-table">
+      <thead>
+        <tr>
+          <th>Root-cause<br>dimension</th>
+          <th class="fs-col-other">
+            <span class="fs-tag fs-tag-se">Source-explicit</span>
+            <span class="fs-col-name">Traditional compiler</span>
+            <span class="fs-col-eg">e.g., GCC, LLVM</span>
+          </th>
+          <th class="fs-col-other">
+            <span class="fs-tag fs-tag-sf">Spec-fixed</span>
+            <span class="fs-col-name">DL framework / compiler</span>
+            <span class="fs-col-eg">e.g., TVM, XLA</span>
+          </th>
+          <th class="fs-col-other">
+            <span class="fs-tag fs-tag-pw">Programmer-written</span>
+            <span class="fs-col-name">Parallel kernel</span>
+            <span class="fs-col-eg">e.g., CUDA, OpenCL</span>
+          </th>
+          <th class="fs-col-tile">
+            <span class="fs-tag fs-tag-cs">Compiler-synthesized</span>
+            <span class="fs-col-name fs-col-name-tile">Tile-based DSL compiler</span>
+            <span class="fs-col-eg fs-col-eg-tile">e.g., Triton, TileLang &mdash; this study</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+
+        <!-- RC1 -->
+        <tr>
+          <td class="fs-td-label">Control flow &amp; scheduling <span class="fs-rc-id">RC1</span></td>
+          <td class="fs-td-other">Failures mainly come from misoptimizing existing branches, loops, and dependencies in source-explicit control flow.</td>
+          <td class="fs-td-other">Failures mainly come from schedule selection, fusion decisions, and lowering choices over fixed operator-graph semantics.</td>
+          <td class="fs-td-other">Failures mainly come from programmer-written branches, divergence guards, and barriers.</td>
+          <td class="fs-td-tile">The compiler <span class="fs-key">synthesizes</span> predicates, masks, synchronization, and warp control from tile iteration space, thread mapping, and shape specialization. Bugs arise when the compiler infers incorrect mask coverage for partial tiles, reorders instructions across implicit sync points, or propagates inconsistent warp metadata during lowering.
+            <span class="fs-pct">5.31%</span>
+            <span class="fs-trigger"><b>Trigger:</b> shape-dependent &mdash; often latent under full-tile execution, exposed only near tile boundaries (e.g., sizes 31/32/33 or 63/64/65)</span>
+          </td>
+        </tr>
+
+        <!-- RC2 -->
+        <tr>
+          <td class="fs-td-label">IR construction &amp; transformation <span class="fs-rc-id">RC2</span></td>
+          <td class="fs-td-other">Failures arise from malformed IR or unsafe rewrites over explicit control and dataflow.</td>
+          <td class="fs-td-other">Failures arise from graph lowering, fusion, and rewrite mistakes over fixed operator semantics.</td>
+          <td class="fs-td-other">This is usually not the dominant failure space; most issues appear directly in source-level kernel logic.</td>
+          <td class="fs-td-tile">Tile IRs <span class="fs-key">materialize</span> per-tile buffers, layouts, masked regions, and mapping metadata. Bugs arise when the compiler <span class="fs-key">constructs</span> or <span class="fs-key">rewrites</span> these synthesized tile semantics incorrectly &mdash; e.g., index-space misalignment after fusion, dropping boundary tiles during predicate simplification, or non-deterministic IR construction defeating kernel caching.
+            <span class="fs-pct">16.28%</span>
+            <span class="fs-trigger"><b>Trigger:</b> tile-config-dependent &mdash; often activated only when specific tile shapes interact with specific IR pass combinations</span>
+          </td>
+        </tr>
+
+        <!-- RC3 -->
+        <tr>
+          <td class="fs-td-label">Tile mapping &amp; launch <span class="fs-rc-id">RC3</span></td>
+          <td class="fs-td-other">Not usually a central failure space.</td>
+          <td class="fs-td-other">Launch and execution parameters are chosen through schedule search and cost-model evaluation over fixed operators. Failures arise when these selected parameters produce invalid or inefficient execution settings.</td>
+          <td class="fs-td-other">Failures come from programmer-specified grid/block dimensions and explicit logical-to-physical mapping mistakes.</td>
+          <td class="fs-td-tile">The compiler <span class="fs-key">derives</span> launch geometry and logical-tile-to-thread/block mapping from tile abstractions &mdash; the programmer never specifies these. Bugs arise when this synthesized mapping breaks spatial coverage or legality under dynamic or non-divisible shapes. <b>This auto-generation of launch geometry from tile structure has no counterpart in the other three domains.</b>
+            <span class="fs-pct">6.31%</span>
+            <span class="fs-trigger"><b>Trigger:</b> shape- &amp; config-dependent &mdash; e.g., increasing max_tiles from 2&rarr;3 exposes launch-namespace conflicts; dynamic batch dims produce invalid grids</span>
+          </td>
+        </tr>
+
+        <!-- RC4 -->
+        <tr>
+          <td class="fs-td-label">Memory semantics <span class="fs-rc-id">RC4</span></td>
+          <td class="fs-td-other">Failures mainly come from incorrect addressing, alias analysis, buffer transformation, or memory optimization over source-level memory behavior.</td>
+          <td class="fs-td-other">Failures mainly come from buffer planning, layout conversion, operator lowering, or backend interaction. Memory decisions are primarily expressed at the tensor/operator and schedule level.</td>
+          <td class="fs-td-other">Failures mainly come from programmer-written indexing, shared-memory use, races, or missing synchronization.</td>
+          <td class="fs-td-tile">The compiler must <span class="fs-key">map</span> logical tiles onto hardware execution and the memory hierarchy: ownership, shared-memory staging, register/shared/global movement, caching, and layout. Bugs arise when this tile-to-hardware mapping is inconsistent with access patterns, reuse assumptions, or resource constraints.
+            <span class="fs-pct">19.27%</span>
+            <span class="fs-trigger"><b>Trigger:</b> layout- &amp; shape-dependent &mdash; often exposed near tile boundaries, under shared-memory pressure, or through premature deallocation / incorrect tile-configuration caching</span>
+          </td>
+        </tr>
+
+        <!-- RC5 -->
+        <tr>
+          <td class="fs-td-label">Type &amp; operator handling <span class="fs-rc-id">RC5</span></td>
+          <td class="fs-td-other">Failures involve generic type lowering or operator miscompilation.</td>
+          <td class="fs-td-other">Failures mainly arise at the operator/framework level, such as type promotion, shape/type semantics, or backend dispatch mismatches.</td>
+          <td class="fs-td-other">Numeric and operator mistakes are mostly source-authored.</td>
+          <td class="fs-td-tile">The compiler <span class="fs-key">specializes</span> operators and datatypes for tile shapes, masks, mixed precision, and backend intrinsics. Bugs arise when specialization breaks operator semantics or numeric meaning &mdash; e.g., incorrect lowering of fused operators at tile boundaries, missing NaN/Inf propagation under partial-tile masks, or ill-defined index-map algebra. <b>This is the largest category (48.84%)</b>, reflecting aggressive specialization without standard fallback paths.
+            <span class="fs-pct">48.84%</span>
+            <span class="fs-trigger"><b>Trigger:</b> dtype- &amp; shape-dependent &mdash; mixing float16/bfloat16/int8, extreme values (NaN, Inf, signed zeros), boundary-adjacent shapes</span>
+          </td>
+        </tr>
+
+        <!-- RC6 -->
+        <tr>
+          <td class="fs-td-label">Device / backend adaptation <span class="fs-rc-id">RC6</span></td>
+          <td class="fs-td-other">Failures arise from backend target assumptions or unsupported codegen paths.</td>
+          <td class="fs-td-other">Failures arise from hardware or library incompatibilities below the operator abstraction boundary.</td>
+          <td class="fs-td-other">Failures arise when manually written kernels assume unsupported hardware behavior or resource layouts.</td>
+          <td class="fs-td-tile">The compiler <span class="fs-key">commits</span> to legality-constrained fragment choices, layouts, and resource usage. A semantically valid tile program can still lower to hardware-incompatible code when compiler assumptions do not match device constraints &mdash; e.g., tile dimensions incompatible with MMA atom layouts on a specific GPU generation.
+            <span class="fs-pct">3.98%</span>
+            <span class="fs-trigger"><b>Trigger:</b> device- &amp; tile-size-dependent &mdash; surface only at runtime on specific GPU architectures or driver/toolchain versions</span>
+          </td>
+        </tr>
+
+      </tbody>
+      </table>
+      </div>
+
+      <p class="fs-note">
+        <b>Why the failure spaces are structurally distinct:</b> In the left three columns, the semantic contract is established <em>before</em> compilation &mdash; by the source program, by operator specs, or by the programmer's kernel code. The compiler's job is to <em>preserve</em> those semantics. In the tile column, the compiler must <em>synthesize</em> semantics (control flow, memory layout, launch geometry, operator specialization) from high-level tile abstractions, often conditioned on runtime tensor shapes. This synthesis creates a failure space that is shape-dependent, configuration-sensitive, and backend-coupled in ways the other three domains are not.
+      </p>
+
+      <div class="fs-callout">
+        <b>Implication for testing:</b> Existing tensor-compiler testing may incidentally exercise some shared failure surfaces when tile-aware lowering is reached. However, it is not designed to
+        (1)&nbsp;generate tile-specific trigger inputs (boundary-adjacent shapes, non-divisible extents, mixed-precision configs),
+        (2)&nbsp;exercise tile-unique compilation stages (predicate synthesis, tile-aware IR rewriting, launch-geometry inference), or
+        (3)&nbsp;construct oracles for tile compilation, which lacks CPU-executable references and requires differential testing across devices, backends, and precision settings.
+      </div>
+
+      <div class="fs-footnote">
+        <b>Percentages from Table 2</b> (n&nbsp;=&nbsp;301 confirmed tile-codegen bugs). Observable symptoms overlap across domains; root causes are structurally distinct because only the tile column requires the compiler to synthesize semantics across every dimension from unresolved abstractions conditioned on runtime shapes.
+      </div>
+    </div>
+  </div>
+</section>
+
   
   <section>
   <section id="tool">
