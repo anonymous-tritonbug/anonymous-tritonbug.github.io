@@ -352,8 +352,8 @@ debugging, testing, and repair tools tailored to tile-based compiler infrastruct
         </div>
         <div class="bug-category-body">
           <div class="bug-overview">
-            These bugs arise when the compiler derives control logic—such as boundary guards,
-            predicate masks, and synchronization placement—from high-level tile abstractions
+            These bugs arise when the compiler derives control logic, such as boundary guards,
+            predicate masks, and synchronization placement, from high-level tile abstractions
             and generates incorrect control behavior during lowering. They typically manifest
             only under specific tile shapes, boundary configurations, or warp layouts.
           </div>
@@ -572,7 +572,7 @@ repro_kernel[(1, 1)](q, k, v, output, num_warps=8, num_ctas=1, num_stages=3)</co
         <div class="bug-category-body">
           <div class="bug-overview">
             These bugs arise at the stage where logical tiles are concretized into physical
-            execution parameters—including grid dimensions, block sizes, and thread–tile
+            execution parameters, including grid dimensions, block sizes, and thread–tile
             associations.
           </div>
 
@@ -666,7 +666,7 @@ repro_kernel[(1, 1)](q, k, v, output, num_warps=8, num_ctas=1, num_stages=3)</co
         <div class="bug-category-body">
           <div class="bug-overview">
             These bugs arise when the compiler incorrectly derives how memory behavior is
-            structured across tiles and tile execution stages—including layouts, buffer
+            structured across tiles and tile execution stages, including layouts, buffer
             lifetimes, and synchronization boundaries.
           </div>
 
@@ -789,7 +789,7 @@ wp.launch(cholesky_kernel, dim=N, block_dim=256)
         <div class="bug-category-body">
           <div class="bug-overview">
             The largest category. These bugs arise when the compiler synthesizes arithmetic
-            behavior—value propagation, type promotion, operator logic—based on tile shapes,
+            behavior (i.e., value propagation, type promotion and operator logic) based on tile shapes,
             masks, and fusion strategies, with subtle mismatches silently corrupting results.
           </div>
 
