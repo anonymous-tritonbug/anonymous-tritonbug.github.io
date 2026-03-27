@@ -390,8 +390,8 @@ repro_kernel[(1, 1)](q, k, v, output, num_warps=8, num_ctas=1, num_stages=3)</co
               (<code>49266aa</code>) contains assumptions about tile-to-warp mapping that hold
               for <code>num_warps=4</code> but break for <code>num_warps=8</code>.
               Because the Linear Layout pass is responsible for deriving how logical tiles
-              are distributed across physical warps and threads — including the predication
-              and masking decisions that depend on this mapping — the invalid layout
+              are distributed across physical warps and threads, including the predication
+              and masking decisions that depend on this mapping, the invalid layout
               causes the compiler to fail before correct control flow can be generated.</p>
           </div>
 
@@ -452,7 +452,7 @@ repro_kernel[(1, 1)](q, k, v, output, num_warps=8, num_ctas=1, num_stages=3)</co
 # Note: the issue author points out that simply updating warpsPerCta
 # may NOT be the correct fix—a new layout type may be needed.</code></pre>
             <span class="label-tag label-rootcause">Root Cause</span>
-            <p><code>WSMaterialization</code> performs a partial update—modifying
+            <p><code>WSMaterialization</code> performs a partial update, modifying
               <code>num-warps</code> without synchronizing <code>warpsPerCta</code> fields.
               This breaks a layout invariant that was previously unchecked by the IR verifier.
               The issue author suggests the representation may need to be extended to express
@@ -700,7 +700,7 @@ _matmul.backward(ctx=ctx, dc=dc)
             <p>The <code>_dsd_kernel</code> (dense-sparse-dense matmul) performs out-of-bounds
               global memory reads at runtime due to incorrect address computation within
               tile-local index arithmetic for sparse access patterns. The issue author notes
-              heisenbug behavior — perturbations to timing or memory layout suppress the fault.</p>
+              heisenbug behavior: perturbations to timing or memory layout suppress the fault.</p>
           </div>
 
           <!-- 4.4.2 -->
@@ -946,7 +946,7 @@ def main(A: T.Buffer((M, K), "float16"),
 #    at cute::shape_div(_96, _64) — 96 and 64 are not divisible</code></pre>
             <span class="label-tag label-rootcause">Root Cause</span>
             <p>The per-warpgroup MMA shape (<code>M64, N96, K32</code>) cannot be evenly
-              decomposed into the SM90 MMA atom layout by the CUTE backend — specifically,
+              decomposed into the SM90 MMA atom layout by the CUTE backend. Specifically,
               <code>shape_div(96, 64)</code> fails because 96 is not divisible by 64. The
               compiler does not validate tile-to-MMA compatibility before committing to the
               lowering path, causing the failure to surface as a backend static assertion
