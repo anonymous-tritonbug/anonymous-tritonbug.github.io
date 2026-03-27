@@ -1023,7 +1023,7 @@ def main(A: T.Buffer((M, K), "float16"),
         <h2 class="title is-3">Root-Cause Failure Spaces</h2>
         <div class="content has-text-justified">
           <p>
-            Tile-based DSL compilers begin from abstractions that leave boundary handling, synchronization, layout, and parallel mapping unresolved, and must <em>synthesize</em> these semantics during lowering, often conditioned on <strong>runtime tensor shapes</strong>. This creates a structurally distinct failure space: the same observable symptoms (e.g., crash, wrong result, numeric pathology) can arise from root causes that have no counterpart in the other three domains.
+            Tile-based DSL compilers begin from abstractions that leave boundary handling, synchronization, layout, and parallel mapping unresolved, and must <em>synthesize</em> these semantics during lowering, often conditioned on <strong>runtime tensor shapes</strong>. Observable symptoms may overlap across domains, but the underlying failure mechanisms are materially different in the tile compilers because they arise from compiler synthesized tile semantics rather than solely from preserving already fixed semantics.
           </p>
         </div>
       </div>
@@ -1042,7 +1042,7 @@ def main(A: T.Buffer((M, K), "float16"),
           </th>
           <th class="fs-col-other">
             <span class="fs-tag fs-tag-sf">Spec-fixed</span>
-            <span class="fs-col-name">DL framework / compiler</span>
+            <span class="fs-col-name">DL compiler</span>
             <span class="fs-col-eg">e.g., TVM, XLA</span>
           </th>
           <th class="fs-col-other">
@@ -1089,7 +1089,7 @@ def main(A: T.Buffer((M, K), "float16"),
           <td class="fs-td-other">Not usually a central failure space.</td>
           <td class="fs-td-other">Launch and execution parameters are chosen through schedule search and cost-model evaluation over fixed operators. Failures arise when these selected parameters produce invalid or inefficient execution settings.</td>
           <td class="fs-td-other">Failures come from programmer-specified grid/block dimensions and explicit logical-to-physical mapping mistakes.</td>
-          <td class="fs-td-tile">The compiler <span class="fs-key">derives</span> launch geometry and logical-tile-to-thread/block mapping from tile abstractions, where the programmer never specifies these. Bugs arise when this synthesized mapping breaks spatial coverage or legality under dynamic or non-divisible shapes. <b>This auto-generation of launch geometry from tile structure has no counterpart in the other three domains.</b>
+          <td class="fs-td-tile">The compiler <span class="fs-key">derives</span> launch geometry and logical-tile-to-thread/block mapping from tile abstractions, where the programmer never specifies these. Bugs arise when this synthesized mapping breaks spatial coverage or legality under dynamic or non-divisible shapes. While related scheduling or mapping decisions may exist elsewhere, tile compilers make launch-geometry inference from tile structure a first-class part of lowering, creating a distinct and systematic failure mode.
             <span class="fs-pct">6.31%</span>
             <span class="fs-trigger"><b>Trigger:</b> shape- &amp; config-dependent &mdash; e.g., increasing max_tiles from 2&rarr;3 exposes launch-namespace conflicts; dynamic batch dims produce invalid grids</span>
           </td>
@@ -1136,18 +1136,10 @@ def main(A: T.Buffer((M, K), "float16"),
       </div>
 
       <p class="fs-note">
-        <b>Why the failure spaces are structurally distinct:</b> In the left three columns, the semantic contract is established <em>before</em> compilation (e.g., by the source program, by operator specs, or by the programmer's kernel code). The compiler's job is to <em>preserve</em> those semantics. In the tile column, the compiler must <em>synthesize</em> semantics (control flow, memory layout, launch geometry, operator specialization) from high-level tile abstractions, often conditioned on runtime tensor shapes. This synthesis creates a failure space that is shape-dependent, configuration-sensitive, and backend-coupled in ways the other three domains are not.
+        <p><strong>Why the failure spaces are structurally distinct:</strong> In the left three columns, the core semantic contract is largely established before compilation, for example, by the source program, by operator specs, or by the programmer's kernel code. The compiler's job is primarily to preserve or realize those semantics. In the tile column, the compiler must additionally synthesize key execution semantics, such as control predicates, memory layout decisions, launch geometry, and operator specialization, from high-level tile abstractions, often conditioned on concrete tensor shapes, extents, or specialization time configurations. This synthesis creates a failure space that is more shape sensitive, configuration sensitive, and backend coupled than in the other three domains.
       </p>
-
-      <div class="fs-callout">
-        <b>Implication for testing:</b> Existing tensor-compiler testing may incidentally exercise some shared failure surfaces when tile-aware lowering is reached. However, it is not designed to
-        (1)&nbsp;generate tile-specific trigger inputs (boundary-adjacent shapes, non-divisible extents, mixed-precision configs),
-        (2)&nbsp;exercise tile-unique compilation stages (predicate synthesis, tile-aware IR rewriting, launch-geometry inference), or
-        (3)&nbsp;construct oracles for tile compilation, which lacks CPU-executable references and requires differential testing across devices, backends, and precision settings.
-      </div>
-
       <div class="fs-footnote">
-        <b>Percentages from Table 2</b> (n&nbsp;=&nbsp;301 confirmed tile-codegen bugs). Observable symptoms overlap across domains; root causes are structurally distinct because only the tile column requires the compiler to synthesize semantics across every dimension from unresolved abstractions conditioned on runtime shapes.
+        <b>Percentages from Table 2</b> (n&nbsp;=&nbsp;301 confirmed tile-codegen bugs). Observable symptoms may overlap across domains, but the underlying failure mechanisms are structurally distinct because tile compilers centralize the synthesis of control, layout, and mapping decisions from unresolved tile abstractions under concrete shapes and configurations.
       </div>
     </div>
   </div>
